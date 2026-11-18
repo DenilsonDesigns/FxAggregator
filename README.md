@@ -1,41 +1,42 @@
 ## System Architecture Plan
 
-## Phase 1: Core Data Structures & Immutable State
+### Phase 1: Core Data Structures & Immutable State ✅
 
-_Goal: Establish the atomic foundation for individual price points without locks._
+**Goal:** Establish the atomic foundation for individual price points without locks.
 
-- **`FxQuote` Value Type:** Define a read-only record/struct containing `Bid`, `Ask`, and `TimestampTicks`.
-- **Immutability Principle:** Enforce that individual price ticks are never mutated in-place; new updates generate fresh snapshots to completely eliminate torn reads.
-- **Deterministic Inversion:** Implement automatic derivation and storage of inverse pairs (`USD/EUR` from `EUR/USD`) with reciprocal bid/ask calculations (`1.0 / ask`, `1.0 / bid`).
+- **✅ FxQuote Value Type:** Defined as a high-precision `readonly` record class containing `Bid`, `Ask`, and `TimestampTicks`, complete with validation guardrails.
+- **✅ Immutability Principle:** Enforced that individual price ticks are never mutated in-place; new updates generate fresh snapshots to completely eliminate torn reads.
+- **✅ Deterministic Inversion:** Implemented automatic derivation and storage of inverse pairs (USD/EUR from EUR/USD) with reciprocal bid/ask calculations (`1.0 / ask`, `1.0 / bid`).
 
-## Phase 2: Lock-Free Ingestion & Thread Safety
+### Phase 2: Lock-Free Ingestion & Thread Safety ✅
 
-_Goal: Handle high-frequency market updates concurrently without locking the read path._
+**Goal:** Handle high-frequency market updates concurrently without locking the read path.
 
-- **Single-Writer / Partitioned Ingress:** Structure ingestion so dedicated worker threads own specific currency pair shards, eliminating write-write contention.
-- **Atomic Reference Swapping:** Use concurrent dictionary or atomic pointer updates (`Interlocked.Exchange`) to swap pair references instantly.
-- **Zero-Allocation Strategy:** Minimize GC pressure by evaluating pre-allocated buffer patterns for incoming tick payloads.
+- **✅ Atomic Reference Swapping:** Built `AtomicQuoteSlot` utilizing `Volatile.Read` and `Interlocked.Exchange` to swap 8-byte object references atomically.
+- **✅ Lock-Free Adjacency Indexing:** Replaced mutable thread-unsafe sets with atomic reference swapping of immutable arrays inside `QuoteStore` to eliminate reader locks entirely on the hot path.
+- **✅ Strong Domain Modeling:** Introduced a robust `CurrencyPair` value type, eliminating fragile string-slicing hacks.
 
-## Phase 3: Graph Topology & Synthetic Pathfinding
+### Phase 3: Graph Topology & Synthetic Pathfinding ✅
 
-_Goal: Compute multi-hop cross rates dynamically when direct liquidity is missing._
+**Goal:** Compute multi-hop cross rates dynamically when direct liquidity is missing.
 
-- **Graph Representation:** Model currency pairs as directed graph edges where weights carry directional bid/ask spreads.
-- **Breadth-First Search (BFS) Traversal:** Implement a traversal engine that starts from a `base` currency and explores valid outbound hops to reach the `quote` currency.
-- **Compounding Spread Logic:** Multiply bids with bids and asks with asks sequentially across each leg to ensure realistic cross-rate pricing.
+- **✅ Graph Representation:** Modeled currency pairs as directed graph edges via an adjacency index maintained within `QuoteStore`.
+- **✅ Breadth-First Search (BFS) Traversal:** Implemented `SyntheticRouteFinder` using a depth-limited queue traversal starting from a base currency to reach the quote currency.
+- **✅ Compounding Spread Logic:** Multiplied bids with bids and asks with asks sequentially across each leg with modular helper methods (`ExpandNeighbors`, `BuildResultQuote`).
 
-## Phase 4: Staleness & Risk Enforcement
+### Phase 4: Staleness & Risk Enforcement 🔄 (In Progress)
 
-_Goal: Prune dead data and safeguard against latency drift._
+**Goal:** Prune dead data and safeguard against latency drift.
 
-- **High-Resolution Timestamps:** Leverage `Stopwatch.GetTimestamp()` for nanosecond-accurate tick aging.
-- **TTL Filtering:** Implement strict time-to-live pruning (e.g., 500ms threshold) directly inside the pathfinding loop so stale legs are dropped mid-traversal.
-- **Leg Risk Awareness:** Document and account for the asynchronous drift between legs during synthetic quote generation.
+- **✅ High-Resolution Timestamps:** Leveraged `Stopwatch.GetTimestamp()` for nanosecond-accurate tick aging.
+- **✅ Reactive TTL Filtering:** Implemented time-to-live pruning checks directly inside the pathfinding loop to drop stale legs mid-traversal.
+- **🔲 Proactive Background Sweeping & Spread Guards:** Next steps include background worker loops to prune dead slots proactively and maximum cumulative spread thresholds to prevent toxic wide quotes.
 
-## Phase 5: Simulation & Audit Harness
+### Phase 5: Active Ingestion Pipeline, Execution Reactor & Simulation Harness 📋 (Next)
 
-_Goal: Validate throughput, latency, and correctness under load._
+**Goal:** Transition from passive scaffolding to a live high-performance processing engine.
 
-- **Market Simulator:** A background producer task simulating high-frequency, realistic price updates across major FX pairs.
-- **Query Runner:** Continuous execution of synthetic cross-rate queries (e.g., `EUR/JPY` via USD) to measure traversal latency.
-- **Audit Logger:** Structured console logging tracking path routes, cumulative rates, max leg age, and execution status.
+- **Active Ingestion Pipeline:** Implement a zero-allocation reader loop using bounded `System.Threading.Channels` to ingest raw price ticks off network feeds without dropping packets.
+- **The Execution Reactor:** Build an active worker loop that triggers reactive cross-rate recalculations or services concurrent client queries against the latest memory snapshot.
+- **Market Simulator:** A background producer task simulating high-frequency, realistic price updates across major FX pairs to stress-test atomic concurrency.
+- **Audit Logger & Metrics:** Structured tracking for traversal latency, cumulative rates, max leg age, and execution throughput under multi-core load.

@@ -24,13 +24,13 @@
 - **✅ Breadth-First Search (BFS) Traversal:** Implemented `SyntheticRouteFinder` using a depth-limited queue traversal starting from a base currency to reach the quote currency.
 - **✅ Compounding Spread Logic:** Multiplied bids with bids and asks with asks sequentially across each leg with modular helper methods (`ExpandNeighbors`, `BuildResultQuote`).
 
-### Phase 4: Staleness & Risk Enforcement 🔄 (In Progress)
+### Phase 4: Staleness & Risk Enforcement ✅
 
 **Goal:** Prune dead data and safeguard against latency drift.
 
 - **✅ High-Resolution Timestamps:** Leveraged `Stopwatch.GetTimestamp()` for nanosecond-accurate tick aging.
 - **✅ Reactive TTL Filtering:** Implemented time-to-live pruning checks directly inside the pathfinding loop to drop stale legs mid-traversal.
-- **🔲 Proactive Background Sweeping & Spread Guards:** Next steps include background worker loops to prune dead slots proactively and maximum cumulative spread thresholds to prevent toxic wide quotes.
+- **✅ Proactive Background Sweeping & Spread Guards:** Next steps include background worker loops to prune dead slots proactively and maximum cumulative spread thresholds to prevent toxic wide quotes.
 
 ### Phase 5: Active Ingestion Pipeline, Execution Reactor & Simulation Harness 📋 (Next)
 

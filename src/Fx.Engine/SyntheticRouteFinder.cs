@@ -10,11 +10,13 @@ public sealed class SyntheticRouteFinder
     private readonly QuoteStore _store;
     private readonly long _maxAllowedAgeTicks;
     private const int MaxHops = 3;
+    private readonly decimal? _maxCumulativeSpread;
 
-    public SyntheticRouteFinder(QuoteStore store, TimeSpan maxAllowedAge)
+    public SyntheticRouteFinder(QuoteStore store, TimeSpan maxAllowedAge, decimal? maxCumulativeSpread = null)
     {
         _store = store;
         _maxAllowedAgeTicks = (long)(maxAllowedAge.TotalSeconds * Stopwatch.Frequency);
+        _maxCumulativeSpread = maxCumulativeSpread;
     }
 
     public bool TryFindSyntheticQuote(string baseCurrency, string quoteCurrency, out FxQuote? resultQuote, out int hopCount)
@@ -80,16 +82,22 @@ public sealed class SyntheticRouteFinder
     {
         foreach (var candidatePairKey in _store.GetConnectedPairs(current.CurrentNode))
         {
-            if (_store.TryGetQuote(candidatePairKey, out var quote))
+            if (_store.TryGetQuote(candidatePairKey, out var quote) && quote != null)
             {
                 string nextNode = ExtractTargetNode(current.CurrentNode, candidatePairKey);
                 if (visited.Contains(nextNode))
                     continue;
 
+                decimal nextBid = current.CumulativeBid * quote.Bid;
+                decimal nextAsk = current.CumulativeAsk * quote.Ask;
+
+                if (IsSpreadExceeded(nextBid, nextAsk))
+                    continue;
+
                 var nextState = new PathState(
                     CurrentNode: nextNode,
-                    CumulativeBid: current.CumulativeBid * quote.Bid,
-                    CumulativeAsk: current.CumulativeAsk * quote.Ask,
+                    CumulativeBid: nextBid,
+                    CumulativeAsk: nextAsk,
                     MaxTimestampTicks: Math.Min(current.MaxTimestampTicks, quote.TimestampTicks),
                     Hops: current.Hops + 1
                 );
@@ -98,6 +106,15 @@ public sealed class SyntheticRouteFinder
                 queue.Enqueue(nextState);
             }
         }
+    }
+
+    private bool IsSpreadExceeded(decimal bid, decimal ask)
+    {
+        if (!_maxCumulativeSpread.HasValue || bid <= 0m)
+            return false;
+
+        decimal spreadRatio = (ask - bid) / bid;
+        return spreadRatio > _maxCumulativeSpread.Value;
     }
 
     private static string ExtractTargetNode(string sourceNode, string pairKey)
